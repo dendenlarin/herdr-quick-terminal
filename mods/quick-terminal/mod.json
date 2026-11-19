@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Quick Terminal",
+  "overlay": { "kind": "window", "width": 380, "frame": "none" }
+}
