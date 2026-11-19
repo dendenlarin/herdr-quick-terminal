@@ -41,6 +41,19 @@ test("preserve unrelated keys and reject context and sequence conflicts", () => 
   }
 });
 
+test("move the mod's binding out of other sections", () => {
+  const keys = { global: { "cmd-p": "app.palette" },
+    terminal: { "ctrl-`": { command: "mod.open", args: { name: "quick-terminal" } }, "cmd-c": "terminal.copy" } };
+  const updated = rebind(keys, "ctrl-`");
+  assert.deepEqual(updated.global, { "cmd-p": "app.palette", "ctrl-`": action });
+  assert.deepEqual(updated.terminal, { "cmd-c": "terminal.copy" });
+});
+
+test("leave keys.json untouched when the shortcut is already set", async () => {
+  const write = async () => assert.fail("must not write");
+  assert.equal(await saveKey("keys.json", "f6", () => JSON.stringify({ global: { f6: action } }), write), false);
+});
+
 test("reload after a concurrent keys.json change before saving", async () => {
   let content = '{"global":{}}';
   const write = async (_path, text, previous) => {
@@ -51,6 +64,6 @@ test("reload after a concurrent keys.json change before saving", async () => {
     assert.equal(previous, content);
     content = text;
   };
-  await saveKey("keys.json", "f6", () => content, write);
+  assert.equal(await saveKey("keys.json", "f6", () => content, write), true);
   assert.deepEqual(JSON.parse(content).global, { "cmd-q": "app.quit", f6: action });
 });
