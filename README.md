@@ -1,57 +1,86 @@
 <div align="center">
-<img src=".github/logo.svg" width="76" alt="">
+
+<img src=".github/logo.svg" alt="" width="80">
 
 # Quick Terminal for Herdr
 
-One shortcut brings your shell back where you left it.
+**Your shell, one shortcut away.**
 
-<img src="preview.png" width="780" alt="Quick Terminal open over a Herdr workspace">
+[![Herdr mod](https://img.shields.io/badge/Herdr-mod-5b7cfa)](https://herdr.dev/mods)
+[![MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+
+<img src="preview.gif" alt="Quick Terminal opening in the folder of each tab, then back with its output kept" width="780">
+
 </div>
 
-Open a centered, interactive shell from any tab. Type a command, hide the window and carry on working. Open it again to find the output, working directory and command line as you left them. The same local shell is available from every workspace, including remote ones.
+A mod for [Herdr](https://herdr.dev), the desktop app for running coding agents side by side. Press a shortcut in any space and a shell opens in the middle of the window. Run a command, hide it and carry on; open it again and the output, folder and half-typed command are where you left them.
+
+No daemon, no layout edits — one shortcut and a shell that stays alive.
+
+## How it works
+
+- **Show or hide** with the same shortcut (`` Ctrl+` `` by default). The × in the header hides it too. Escape goes to the program in the terminal, so Vim and pickers keep working.
+- **One shell for every space.** It runs in herdr-core on this computer, so it survives switching spaces and reopening Herdr. In a space on another machine the header says **Local**.
+- **Or one per project.** Tick **Open in the focused terminal's folder** in settings: the terminal opens in the folder of the terminal you were in, and each folder keeps its own shell. Come back to a project and its output is still there.
+- **Settings** behind the gear: the folder mode, the starting folder (your home folder at first), the shortcut, and **End shell** to start over. A new starting folder applies to the next shell.
+- **Finish** with `exit` or End shell: the next open starts a fresh shell in the starting folder.
 
 ## Install
 
-Requires Herdr App and herdr-core. Tested with Herdr App 0.1.13 and 0.1.16 on macOS and herdr-core 0.1.18.
+Needs Herdr 0.1.13+ with herdr-core. Tested with Herdr 0.1.13 and 0.1.16 on macOS.
 
-Ask your agent in Herdr:
+Ask the agent running in Herdr:
 
 ```text
-Read the Herdr app's AGENTS.md, then install https://github.com/dendenlarin/herdr-quick-terminal using its RECIPE.md. Preserve my key bindings.
+Read ~/.config/herdr-app/AGENTS.md, then install
+https://github.com/dendenlarin/herdr-quick-terminal using its RECIPE.md.
+Preserve my key bindings.
 ```
 
+It copies the mod and adds the shortcut from `keys.json` if the chord is free.
+
 <details>
-<summary>Install by hand</summary>
+<summary>By hand</summary>
 
-1. Copy `mods/quick-terminal/` into the app home's `mods/` directory (default `~/.config/herdr-app`, or `$HERDR_APP_HOME`). Copy `mod.json` first on a running app. For an upgrade, back up the installed mod, then replace its source files.
-2. In the app home's `keys.json`, add the following entry **inside the existing global object**. Check all sections for a conflicting shortcut first. Choose another free chord if needed.
-3. Run `herdr-app check /path/to/app-home/mods/quick-terminal` and check `herdr-app status` for errors. Edits load live.
+Copy `mods/quick-terminal/` into your app home's `mods/` directory (default `~/.config/herdr-app`, or `$HERDR_APP_HOME`). Write `mod.json` before the other files on a running app, and back up an existing copy when upgrading.
 
-~~~json
+Add the shortcut **inside the existing `global` object** of the app home's `keys.json`, after checking that no section uses the chord already:
+
+```json
 "ctrl-`": "mod.open:quick-terminal"
-~~~
+```
 
-You can also open the terminal with `herdr-app do mod.open --name quick-terminal` and set a shortcut from its settings.
+Or skip it: open the terminal with `herdr-app do mod.open --name quick-terminal` and record a shortcut in its settings.
+
+```sh
+herdr-app check ~/.config/herdr-app/mods/quick-terminal
+herdr-app status
+```
 
 </details>
 
-## Use
-
-- **Show or hide** with the same shortcut. The × in the header also hides the terminal. Escape goes to the foreground program, so it works in Vim and interactive pickers.
-- **Change settings** with the gear in the header. Choose a starting folder (initially your home directory) or record another shortcut. A new folder applies the next time a shell starts. When the configured folder is unavailable, you can choose a replacement or open once in home.
-- **Resume** after switching tabs or reopening Herdr App while herdr-core is still running. Terminal scrollback is bounded by the host. Shell command history follows your shell settings.
-- **Finish** with `exit`. Your next invocation starts a fresh shell. A reboot also ends the live session.
-
 ## What it touches
 
-The mod starts the configured local shell through herdr-core, using a unique live name and a mod label to find it again. Herdr stores the starting folder under `quick-terminal.folder` in shared settings. Changing the shortcut updates its global binding in `keys.json`. Terminal output stays with herdr-core. No network service, background helper or layout edits are required.
+- **Runs** your login shell through herdr-core (`hc run`), named `herdr-quick-terminal` and labelled `mod=quick-terminal`. With the folder option each folder gets its own shell, named `quick-terminal-<hash>` and labelled `folder=<path>`. **End shell** and **End N others** run `hc kill` on them.
+- **Stores** the starting folder and the folder option in Herdr's shared settings as `quick-terminal.folder` and `quick-terminal.follow`.
+- **Writes `keys.json`** only when you record a shortcut in settings. After that edit Herdr treats the whole file as yours and stops adding its new default shortcuts to it; add those by hand.
+- **Opens** the GitHub page in your browser when you click its icon in settings.
+- No network, no background helper, no layout or agent changes.
 
 ## Uninstall
 
-If you want to end the shell, type `exit` first. Remove the global binding whose action is `mod.open:quick-terminal`, then remove `mods/quick-terminal/`. The saved folder is harmless and will be reused after reinstalling.
+Type `exit` if you want to end the shell. Remove the binding whose action is `mod.open:quick-terminal` from `keys.json`, then delete `mods/quick-terminal/`. The saved folder setting is harmless and is reused if you reinstall.
+
+## Good to know
+
+- The shell always runs on this computer. With the folder option, a terminal on another machine, or no terminal in focus, opens the shared shell in the starting folder.
+- Folder shells stay alive until you end them: settings show **End N others** when more than one is open.
+- A reboot or a herdr-core restart ends the shell; scrollback is bounded by herdr-core, command history follows your shell.
+- With a non-Latin keyboard layout (Russian, Greek…) `` Ctrl+` `` may not match: record the shortcut in settings with the layout you type in.
+- Recording a shortcut rejects chords used anywhere in `keys.json`, including the first key of a sequence. `ctrl-alt-shift-escape` is Herdr's escape hatch and can't be taken.
 
 ## Development
 
-Run `npm test` with Node 20+ for the session and shortcut tests. No packages need installing. See [RECIPE.md](RECIPE.md) for the live acceptance checks.
+`main.js` picks its view from `props().role`: none is the launcher, `header` the bar above the terminal, `settings` the dialog. `session.js` finds or starts the shell; `shortcut.js` edits `keys.json`. Run `npm test` (Node 20+, no packages) for the session and shortcut logic, then `herdr-app check mods/quick-terminal` and the checks in [RECIPE.md](RECIPE.md) in a live window.
 
-[MIT License](LICENSE)
+MIT License

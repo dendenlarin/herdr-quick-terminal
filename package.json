@@ -1,6 +1,9 @@
 {
   "name": "herdr-quick-terminal",
+  "description": "Herdr mod: a persistent shell in a centered overlay, one shortcut away",
   "private": true,
+  "license": "MIT",
   "type": "module",
+  "engines": { "node": ">=20" },
   "scripts": { "test": "node --test tests/*.test.js" }
 }
