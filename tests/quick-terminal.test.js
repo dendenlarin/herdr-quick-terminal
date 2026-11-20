@@ -1,33 +1,74 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { session } from "../mods/quick-terminal/session.js";
+import { folderName, session, sharedName, target } from "../mods/quick-terminal/session.js";
 import { action, rebind, saveKey } from "../mods/quick-terminal/shortcut.js";
 
 const ok = value => ({ code: 0, stdout: JSON.stringify(value) });
 
-test("reuse the local terminal across folder changes", async () => {
+const shell = (cwd, folder) => ({ name: folder ? folderName(folder) : sharedName, cwd, folder });
+
+test("reuse the local shared shell across folder changes", async () => {
   const hc = async args => {
     assert.deepEqual(args, ["ls", "--json", "--label", "mod=quick-terminal"]);
-    return ok({ terminals: [{ address: "remote/t1" }, { address: "t4" }] });
+    return ok({ terminals: [{ address: "rpi/t1", name: sharedName }, { address: "t3", name: folderName("/a") },
+      { address: "t4", name: sharedName }] });
   };
-  assert.equal(await session(hc, "/elsewhere"), "t4");
+  assert.equal(await session(hc, shell("/elsewhere")), "t4");
+});
+
+test("keep the shared shell and folder shells apart", async () => {
+  const runs = [];
+  const hc = async args => {
+    if (args[0] === "ls") return ok({ terminals: [{ address: "t4", name: sharedName }] });
+    runs.push(args);
+    return ok({ address: "t9" });
+  };
+  assert.equal(await session(hc, shell("/repo/web", "/repo/web")), "t9");
+  assert.deepEqual(runs[0], ["run", "--bg", "--json", "--no-parent", "--rm", "--name", folderName("/repo/web"),
+    "--label", "mod=quick-terminal", "--label", "folder=/repo/web", "--cwd", "/repo/web"]);
 });
 
 test("two concurrent opens converge on one owned shell", async () => {
   let address;
   const hc = async args => {
-    if (args[0] === "ls") return ok({ terminals: address ? [{ address }] : [] });
+    if (args[0] === "ls") return ok({ terminals: address ? [{ address, name: sharedName }] : [] });
     assert.deepEqual(args.slice(-2), ["--cwd", "/path with spaces"]);
     if (address) return { code: 1, stderr: "name taken" };
     address = "t42";
     return ok({ address });
   };
-  assert.deepEqual(await Promise.all([session(hc, "/path with spaces"), session(hc, "/path with spaces")]), ["t42", "t42"]);
+  const spec = shell("/path with spaces");
+  assert.deepEqual(await Promise.all([session(hc, spec), session(hc, spec)]), ["t42", "t42"]);
 });
 
 test("report an unavailable folder without adopting another terminal", async () => {
-  const hc = async args => args[0] === "ls" ? ok({ terminals: [] }) : { code: 1, stderr: "missing folder" };
-  await assert.rejects(session(hc, "/gone"), /missing folder/);
+  const hc = async args => args[0] === "ls"
+    ? ok({ terminals: [{ address: "t5", name: folderName("/other") }] })
+    : { code: 1, stderr: "missing folder" };
+  await assert.rejects(session(hc, shell("/gone", "/gone")), /missing folder/);
+});
+
+test("name folder shells stably within hc's limits", () => {
+  for (const path of ["/", "/Users/me/code/acme-web", "/naïve café/with spaces", "/x".repeat(500)]) {
+    const name = folderName(path);
+    assert.match(name, /^[a-z0-9_-]{1,32}$/);
+    assert.equal(folderName(path), name);
+  }
+  assert.notEqual(folderName("/repo/web"), folderName("/repo/api"));
+});
+
+test("pick the focused local terminal's folder only when following", () => {
+  const terminals = [{ address: "t7", cwd: "/start", foreground: { cwd: "/repo/web/src" } }];
+  const base = { focused: { terminal: "t7", cwd: null }, terminals, startFolder: "/home" };
+  assert.deepEqual(target({ ...base, follow: false }), { name: sharedName, cwd: "/home" });
+  assert.deepEqual(target({ ...base, follow: true }),
+    { name: folderName("/repo/web/src"), cwd: "/repo/web/src", folder: "/repo/web/src" });
+  assert.equal(target({ ...base, follow: true, focused: { terminal: "t7", cwd: "/repo/api" } }).cwd, "/repo/api");
+  for (const focused of [null, { terminal: null, cwd: "/x" }, { terminal: "rpi/t2", cwd: "/home/pi" }]) {
+    assert.deepEqual(target({ ...base, follow: true, focused }), { name: sharedName, cwd: "/home" });
+  }
+  assert.deepEqual(target({ follow: true, focused: { terminal: "t8" }, terminals: [{ address: "t8" }], startFolder: "/home" }),
+    { name: sharedName, cwd: "/home" });
 });
 
 test("preserve unrelated keys and reject context and sequence conflicts", () => {
