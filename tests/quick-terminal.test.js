@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { folderName, session, sharedName, target } from "../mods/quick-terminal/session.js";
+import { findLocal, folderName, session, sharedName, target } from "../mods/quick-terminal/session.js";
 import { action, rebind, saveKey } from "../mods/quick-terminal/shortcut.js";
 
 const ok = value => ({ code: 0, stdout: JSON.stringify(value) });
 
 const shell = (cwd, folder) => ({ name: folder ? folderName(folder) : sharedName, cwd, folder });
 
-test("reuse the local shared shell across folder changes", async () => {
+test("adopt the shell another open started under the same name", async () => {
   const hc = async args => {
+    if (args[0] === "run") return { code: 1, stderr: "name taken" };
     assert.deepEqual(args, ["ls", "--json", "--label", "mod=quick-terminal"]);
     return ok({ terminals: [{ address: "rpi/t1", name: sharedName }, { address: "t3", name: folderName("/a") },
       { address: "t4", name: sharedName }] });
@@ -19,7 +20,7 @@ test("reuse the local shared shell across folder changes", async () => {
 test("keep the shared shell and folder shells apart", async () => {
   const runs = [];
   const hc = async args => {
-    if (args[0] === "ls") return ok({ terminals: [{ address: "t4", name: sharedName }] });
+    assert.equal(args[0], "run");
     runs.push(args);
     return ok({ address: "t9" });
   };
@@ -46,6 +47,14 @@ test("report an unavailable folder without adopting another terminal", async () 
     ? ok({ terminals: [{ address: "t5", name: folderName("/other") }] })
     : { code: 1, stderr: "missing folder" };
   await assert.rejects(session(hc, shell("/gone", "/gone")), /missing folder/);
+});
+
+test("find a live local shell by name without hc", () => {
+  const list = [{ address: "rpi/t1", name: sharedName }, { address: "t2", name: sharedName, state: "exited" },
+    { address: "t3", name: folderName("/a") }, { address: "t4", name: sharedName, state: "live" }];
+  assert.equal(findLocal(list, sharedName), "t4");
+  assert.equal(findLocal(list, folderName("/a")), "t3");
+  assert.equal(findLocal(list, folderName("/b")), undefined);
 });
 
 test("name folder shells stably within hc's limits", () => {

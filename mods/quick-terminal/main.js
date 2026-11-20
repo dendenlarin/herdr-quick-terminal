@@ -2,7 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Checkbox } from "gpui-base";
 import { appHome, closeOverlay, exec, focused, hc, home, keys, openOverlay, pickFolder, props,
   readTextFile, setShared, shared, spaces, terminals, theme, window, writeTextFile } from "herdr";
-import { session, sharedName, target } from "./session.js";
+import { findLocal, session, sharedName, target } from "./session.js";
 import { action, reserved, saveKey } from "./shortcut.js";
 
 const repo = "https://github.com/dendenlarin/herdr-quick-terminal";
@@ -58,26 +58,33 @@ export default class QuickTerminal extends View {
   }
 
   // spec: { name, cwd, folder? } from target(); retries open the shared shell.
+  // A live shell comes from Herdr's in-memory terminals() at once; hc runs only to start one.
   start(cx, spec) {
     if (this.busy) return;
+    const live = findLocal(terminals(), spec.name);
+    if (live) return this.show(live);
     this.busy = true;
     this.error = "";
     cx.spawn(async cx => {
       try {
         const terminal = await session(hc, spec);
-        if (this.closed) return;
-        const space = spaces().find(s => s.id === focused()?.space);
-        this.child = openOverlay({
-          kind: "dialog", modal: true, width: 0.7, height: 0.6,
-          layout: { type: "column", resizable: false, children: [
-            { type: "block", size: { px: 34 }, content: { mod: "quick-terminal",
-              props: { role: "header", terminal, owner: props().overlay, remote: Boolean(space?.machine) } } },
-            { type: "block", content: { terminal } }
-          ] }
-        });
+        if (!this.closed) this.show(terminal);
       } catch (error) { this.error = message(error); }
       this.busy = false;
       cx.notify();
+    });
+  }
+
+  show(terminal) {
+    this.error = "";
+    const space = spaces().find(s => s.id === focused()?.space);
+    this.child = openOverlay({
+      kind: "dialog", modal: true, width: 0.7, height: 0.6,
+      layout: { type: "column", resizable: false, children: [
+        { type: "block", size: { px: 34 }, content: { mod: "quick-terminal",
+          props: { role: "header", terminal, owner: props().overlay, remote: Boolean(space?.machine) } } },
+        { type: "block", content: { terminal } }
+      ] }
     });
   }
 

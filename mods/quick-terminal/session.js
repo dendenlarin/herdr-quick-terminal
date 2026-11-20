@@ -20,17 +20,20 @@ export function target({ follow, focused, terminals, startFolder }) {
   return dir ? { name: folderName(dir), cwd: dir, folder: dir } : shared;
 }
 
+// The live shell with this name on this computer, from a terminal list (`hc ls --json` or terminals()).
+export function findLocal(terminals, name) {
+  return terminals.find(t => t.name === name && !t.address.includes("/") && (t.state ?? "live") === "live")?.address;
+}
+
 async function find(hc, name) {
   const result = await hc(["ls", "--json", "--label", label]);
   if (result.code !== 0) throw new Error(result.stderr || result.stdout);
-  return JSON.parse(result.stdout).terminals
-    .find(t => t.name === name && !t.address.includes("/"))?.address;
+  return findLocal(JSON.parse(result.stdout).terminals, name);
 }
 
-// Core enforces unique live names even across overlapping mod instances.
+// Starts the named shell. Callers look in terminals() first; if another open won the race,
+// core refuses the taken name and the lookup finds that shell instead.
 export async function session(hc, { name, cwd, folder }) {
-  const existing = await find(hc, name);
-  if (existing) return existing;
   const labels = ["--label", label, ...(folder ? ["--label", "folder=" + folder] : [])];
   const result = await hc(["run", "--bg", "--json", "--no-parent", "--rm",
     "--name", name, ...labels, "--cwd", cwd]);
@@ -38,7 +41,7 @@ export async function session(hc, { name, cwd, folder }) {
     const address = JSON.parse(result.stdout).address;
     if (address) return address;
   }
-  const concurrent = await find(hc, name);
-  if (concurrent) return concurrent;
+  const existing = await find(hc, name);
+  if (existing) return existing;
   throw new Error(result.stderr || result.stdout || "Could not start the shell.");
 }
