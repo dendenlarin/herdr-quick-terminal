@@ -1,13 +1,16 @@
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, Checkbox } from "gpui-base";
 import { appHome, closeOverlay, exec, focused, hc, home, keys, openOverlay, pickFolder, props,
   readTextFile, setShared, shared, spaces, terminals, theme, window, writeTextFile } from "herdr";
-import { session } from "./session.js";
+import { session, sharedName, target } from "./session.js";
 import { action, reserved, saveKey } from "./shortcut.js";
 
 const repo = "https://github.com/dendenlarin/herdr-quick-terminal";
 const folderSetting = "quick-terminal.folder";
+const followSetting = "quick-terminal.follow";
 const folder = () => shared(folderSetting) || home();
+const follows = () => shared(followSetting) === true;
+const quickShells = () => terminals().filter(t => t.labels?.mod === "quick-terminal" && !t.address.includes("/"));
 const icon = name => "mods/quick-terminal/" + name + ".svg";
 const message = error => error?.message ?? String(error);
 
@@ -49,16 +52,19 @@ export default class QuickTerminal extends View {
   init(_props, cx) {
     this.handle = cx.focus_handle();
     const p = props() ?? {};
-    if (p.overlay && !p.role) this.start(cx);
+    if (p.overlay && !p.role) {
+      this.start(cx, target({ follow: follows(), focused: focused(), terminals: terminals(), startFolder: folder() }));
+    }
   }
 
-  start(cx, cwd = folder()) {
+  // spec: { name, cwd, folder? } from target(); retries open the shared shell.
+  start(cx, spec) {
     if (this.busy) return;
     this.busy = true;
     this.error = "";
     cx.spawn(async cx => {
       try {
-        const terminal = await session(hc, cwd);
+        const terminal = await session(hc, spec);
         if (this.closed) return;
         const space = spaces().find(s => s.id === focused()?.space);
         this.child = openOverlay({
@@ -87,7 +93,7 @@ export default class QuickTerminal extends View {
         const path = await pickFolder({ prompt: "Use starting folder" });
         if (path) {
           setShared(folderSetting, path);
-          if (retry) this.start(cx, path);
+          if (retry) this.start(cx, { name: sharedName, cwd: path });
         }
       } catch (error) { this.error = message(error); }
       cx.notify();
@@ -169,20 +175,38 @@ export default class QuickTerminal extends View {
         });
       }
     }
+    const follow = follows();
+    const others = quickShells().filter(item => item.address !== p.terminal);
+    const check = Checkbox.new("follow").checked(follow)
+      .flex().items_start().gap(10).px(8).py(7).mx(-8).rounded(6).cursor_pointer()
+      .hover(s => s.bg(t.hover))
+      .on_change((checked, cx) => { setShared(followSetting, checked); cx.notify(); })
+      .child(div().size(16).mt(1).flex_none().flex().items_center().justify_center().rounded(4)
+        .border(1).border_color(follow ? t.accent : t.muted).bg(follow ? t.accent : t.background)
+        .when(follow, el => el.child(svg(icon("check")).size(12).text_color(t.background))))
+      .child(v_flex().gap(2)
+        .child(div().child("Open in the focused terminal's folder"))
+        .child(div().text_size(12).text_color(t.dim).child("Each folder keeps its own shell.")));
     return root.bg(t.popover).p(16).gap(12).text_size(13).text_color(t.foreground)
       .child(h_flex().items_center().gap(4)
         .child(div().flex_1().font_semibold().child("Quick Terminal"))
         .child(iconButton("repo", "github", () => openLink(repo), "Quick Terminal on GitHub"))
         .child(button("done", "Done", () => closeOverlay(p.overlay))))
-      .child(row("Starting folder",
-        button("folder", displayPath(folder()), (_e, cx) => this.chooseFolder(cx), folder())))
+      .child(check)
+      .child(row(follow ? "Fallback folder" : "Starting folder",
+        button("folder", displayPath(folder()), (_e, cx) => this.chooseFolder(cx),
+          follow ? "Used when the focused terminal is remote or has no folder: " + folder() : folder())))
       .child(row("Shortcut", button("key", this.recording ? "Press shortcut…" : binding?.keys || "Set shortcut",
         (_e, cx) => this.startRecording(cx))))
       .when(Boolean(this.recording), el => el.child(div().text_size(12).text_color(t.dim)
         .child("Esc cancels. Saving rewrites keys.json: Herdr then stops adding its new default shortcuts to it.")))
-      .when(live, el => el.child(row("Shell", button("end", "End shell", () => {
-        hc(["kill", p.terminal]).catch(() => {});
-      }, "Close this shell. The next open starts a fresh one in the starting folder."))))
+      .when(live || others.length > 0, el => el.child(row("Shell", h_flex().gap(2)
+        .when(others.length > 0, el => el.child(button("others", "End " + others.length + (others.length === 1 ? " other" : " others"), () => {
+          for (const item of others) hc(["kill", item.address]).catch(() => {});
+        }, "Close the other Quick Terminal shells: " + others.map(item => displayPath(item.foreground?.cwd || item.cwd || "")).join(", "))))
+        .when(live, el => el.child(button("end", "End shell", () => {
+          hc(["kill", p.terminal]).catch(() => {});
+        }, "Close this shell. The next open starts a fresh one."))))))
       .when(Boolean(this.error), el => el.child(div().text_size(12).text_color(t.blocked).child(this.error)));
   }
 
@@ -197,7 +221,7 @@ export default class QuickTerminal extends View {
       .child(div().text_size(12).child(this.error))
       .child(h_flex().gap(6)
         .child(button("choose", "Choose folder", (_e, cx) => this.chooseFolder(cx, true)))
-        .child(button("home", "Open in home", (_e, cx) => this.start(cx, home())))
+        .child(button("home", "Open in home", (_e, cx) => this.start(cx, { name: sharedName, cwd: home() })))
         .child(button("dismiss", "Close", () => closeOverlay(p.overlay))));
   }
 }
